@@ -23,6 +23,7 @@ import (
 	"github.com/knative/eventing/contrib/natss/pkg/dispatcher/dispatcher"
 	"github.com/knative/eventing/contrib/natss/pkg/util"
 	"github.com/knative/pkg/signals"
+	"github.com/nats-io/prometheus-nats-exporter/exporter"
 	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -36,6 +37,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to create logger: %v", err)
 	}
+
+	// monitoring
+	startMonitoring()
 
 	mgr, err := manager.New(config.GetConfigOrDie(), manager.Options{})
 	if err != nil {
@@ -68,4 +72,32 @@ func main() {
 	if err != nil {
 		logger.Fatal("Manager.Start() returned an error", zap.Error(err))
 	}
+}
+
+func startMonitoring() {
+	// Get the default options, and set what you need to.  The listen address and port
+	// is how prometheus can poll for collected data.
+	opts := exporter.GetDefaultExporterOptions()
+	opts.GetVarz = true
+	opts.GetSubz = true
+	opts.GetConnz = true
+	opts.GetRoutez = true
+	opts.ListenPort = 9090
+	opts.ListenAddress = "localhost"
+	opts.NATSServerURL = "http://nats-streaming.natss.svc.cluster.local:8222" // todo make it configurable
+
+	// create an exporter instance, ready to be launched.
+	exp := exporter.NewExporter(opts)
+
+	// start collecting data
+	err := exp.Start()
+	if err != nil {
+		log.Println("cannot start nats prometheus exporter.", zap.Error(err))
+	}
+
+	// call Stop() when done
+	exp.Stop()
+
+	// block until the exporter is stopped
+	exp.WaitUntilDone()
 }
